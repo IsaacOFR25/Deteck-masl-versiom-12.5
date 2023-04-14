@@ -1,0 +1,106 @@
+#version 12.05 
+import os
+import cv2
+import mediapipe as mp
+from playsound import playsound
+import tkinter as tk
+from PIL import ImageTk, Image
+from tkinter import messagebox
+
+mp_face_detection = mp.solutions.face_detection
+LABELS = ["Con mascarilla", "Sin mascarilla"]
+
+# Leer el modelo
+face_mask = cv2.face.LBPHFaceRecognizer_create()
+face_mask.read("face_mask_model.xml")
+
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+root = tk.Tk()
+root.title("Detector de Mascarilla")
+root.geometry("680x700")
+root.resizable(False, False)
+root.configure(bg='#f2f2f2')
+
+title_label = tk.Label(root, text="Detector de Mascarilla", font=("Arial", 26, "bold"), bg='#6495ED', fg='#FFFFFF')
+title_label.pack(fill='x')
+
+status_label = tk.Label(root, text="Desconocido", font=("Arial", 16), bg='#f2f2f2')
+status_label.pack(pady=10,side=tk.TOP)
+
+# Crear un canvas donde se mostrará el frame de la cámara
+canvas = tk.Canvas(root, width=640, height=480, bg='#000000')
+canvas.pack()
+
+def detect_mask():
+    global status_label, canvas
+    status_label.config(text="Iniciando detección...", fg='#ff6600')
+    with mp_face_detection.FaceDetection(
+        min_detection_confidence = 0.5) as face_detection:
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame = cv2.flip(frame,1)
+
+            height, width, _ = frame.shape
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(frame_rgb)
+
+            if results.detections:
+                for detection in results.detections:
+                    bbox = detection.location_data.relative_bounding_box
+                    xmin = int(bbox.xmin * width)
+                    ymin = int(bbox.ymin * height)
+                    w = int(bbox.width * width)
+                    h = int(bbox.height * height)
+
+                    if xmin < 0 or ymin < 0 or w < 1 or h < 1:
+                        continue
+
+                    face_image = cv2.cvtColor(frame[ymin : ymin  + h, xmin : xmin +w], cv2.COLOR_BGR2GRAY)
+                    face_image = cv2.resize(face_image, (72, 72), interpolation = cv2.INTER_CUBIC)
+
+                    label, confidence = face_mask.predict(face_image)
+                    if confidence < 150:
+                        #playsound('C:/Users/luke2/Downloads/alarma.mp3')
+                        color = (0,0,255) if LABELS[label] == "Sin mascarilla" else (0,255,0)
+                        cv2.putText(frame, "{}".format(LABELS[label]), (xmin, ymin-25), cv2.FONT_HERSHEY_DUPLEX, 1.5, color, 2, cv2.LINE_AA)
+                        cv2.rectangle(frame, (xmin, ymin), (xmin + w, ymin + h), color, 3)
+                        status_label.config(text=LABELS[label], fg='#B22222' if LABELS[label] == "Sin mascarilla" else '#008000')
+
+           # Mostrar el frame en el canvas
+            img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (640, 480))
+            img = ImageTk.PhotoImage(image=Image.fromarray(img))
+            canvas.create_image(0, 0, anchor=tk.NW, image=img)
+            canvas.img = img
+            root.update()
+
+            if cv2.waitKey(1) == 27:
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+def about():
+    messagebox.showinfo("Acerca de", "Este programa utiliza la biblioteca OpenCV y la biblioteca de mediapipe para detectar rostros y detectar si el usuario está usando una mascarilla o no. El programa muestra la cámara en vivo y utiliza un modelo de aprendizaje automático previamente entrenado para determinar si se está usando una mascarilla. \n\nSi el usuario no tiene una mascarilla, se muestra una etiqueta ""Sin mascarilla"" en el video en vivo y se activa una alarma de sonido. \nEste programa se puede utilizar para ayudar a garantizar el cumplimiento de los requisitos de uso de mascarillas en lugares públicos.\n\nDesarrollado por: [Isaac Francisco Ortega Romero]")
+
+def pausa():        
+         messagebox.showinfo("Pausa en la detección","Haz pausado al detección, para reanudar solo da click en aceptar")
+        
+button_frame = tk.Frame(root, bg='#f2f2f2')
+button_frame.pack(pady=10)
+
+button1 = tk.Button(button_frame, text="Iniciar detección", command=detect_mask, font=("Arial", 14, "bold"), bg='#6495ED', fg='#FFFFFF')
+button1.grid(row=0, column=0, padx=10, columnspan=2)
+
+button3 = tk.Button(button_frame, text="Pausar detección", font=("Arial", 14, "bold"), bg='#6495ED', fg='#FFFFFF',command=pausa)
+button3.grid(row=0, column=2, padx=10, columnspan=2)
+
+button2 = tk.Button(button_frame, text="Acerca de", font=("Arial", 14, "bold"), bg='#6495ED', fg='#FFFFFF',command=about)
+button2.grid(row=1, column=0, columnspan=4, padx=10, pady=10, sticky="nsew")
+
+
+root.mainloop()
